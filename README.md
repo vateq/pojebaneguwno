@@ -1,6 +1,6 @@
 # SZYB 09
 
-Przeglądarkowy survival horror 3D w proceduralnym labiryncie wentylacyjnym. Każda próba generuje nowy układ dwóch poziomów 14 × 14, ślepych odnóg, paneli do rozbicia, niskich przejść i drabin. Wyjście powstaje w losowym, odległym miejscu na górnym poziomie. Potwór patroluje kanały, słyszy kroki, skoki i niszczony metal, reaguje na światło latarki i potrafi dotrzeć drabinami na drugi poziom. Nie przenika przez zamknięte panele ani niskie przejścia; może dojść do przeszkody po usłyszeniu dźwięku. Po zauważeniu gracza potrzebuje chwili, by rozpocząć pościg, a zetknięcie daje krótki czas na ucieczkę. Ma również oko z tyłu ciała, które otwiera się, gdy gracz pozostaje za nim.
+Przeglądarkowy survival horror 3D w proceduralnym labiryncie wentylacyjnym. Każda próba generuje nowy układ dwóch poziomów 14 × 14, ślepych odnóg, paneli do rozbicia, niskich przejść i drabin. Wyjście powstaje w losowym, odległym miejscu na górnym poziomie. Potwór patroluje kanały, słyszy kroki, skoki i niszczony metal, reaguje na skierowaną w niego latarkę i potrafi dotrzeć drabinami na drugi poziom. Głośny krok, lądowanie lub niszczenie panelu sprowadza go biegiem do źródła dźwięku. Nie przenika przez zamknięte panele ani niskie przejścia, więc można się przed nim ukryć. Chwyt obejmuje paszczę i przednie kończyny, lecz wymaga krótkiego kontaktu. Oko z tyłu ciała otwiera się, gdy gracz pozostaje za nim także daleko w prostym kanale.
 
 ## Gra online
 
@@ -31,8 +31,8 @@ Można uciec bez podnoszenia przedmiotów. Gra nie zawiera mapy ani wskazówek d
 
 - `src/maze.js` — generator labiryntu i graf przejść.
 - `src/world.js` — geometria kanałów, przeszkody, drabiny, scenografia.
-- `src/creature.js` — organiczny model 3D z ciągłą powierzchnią tułowia, deformowanymi kończynami, teksturą skóry, paszczą i tylnym okiem.
-- `src/ai.js` — zasięg wzroku i czas chwytu.
+- `src/creature.js` — model 3D z żebrowanym tułowiem, spiczastą głową bez przednich oczu, deformowanymi kończynami i dłońmi, paszczą, językiem, skórą i tylnym okiem.
+- `src/ai.js` — zasięg wzroku, oświetlenie latarką, otwarcie tylnego oka i zasięg chwytu.
 - `src/audio.js` — wszystkie dostarczone efekty w Web Audio z pozycjonowaniem HRTF.
 - `src/main.js` — ruch, kolizje, AI, scenka na drabinie, śmierć i wygrana.
 - `vendor/` — lokalna kopia Three.js 0.186.1, bez zależności od CDN.

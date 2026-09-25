@@ -19,3 +19,5 @@ Pliki dostarczone przez użytkownika; nazwy autorów i identyfikatory pochodzą 
 | `jump-hit.mp3` | `freesound_community-jumpscare-94984(5).mp3` |
 | `jump-squeak.mp3` | `freesound_community-squeaky-jumpscare-2-102254(5).mp3` |
 | `jump-creature.mp3` | `sound_effects75-eyesaur-jumpscare-sound-482110(5).mp3` |
+
+Wszystkie piętnaście nagrań jest załadowanych i wykorzystywanych w grze. `jump-squeak` odzywa się przy otwarciu tylnego oka, a `jump-creature` przy alarmie wywołanym hałasem lub latarką. Głośny krok gracza korzysta teraz z `steps-heavy`; patrol potwora z `steps-metal`, a pościg z `run-metal`. Pozostałe pliki obsługują oddech, wentylatory, drabinę, ciche kroki, uderzenia, skrzypienie metalu i sekwencję śmierci.

@@ -110,19 +110,55 @@ function torsoGeometry() {
 }
 
 function mouthGeometry() {
-  const positions = [], uv = [], indices = [], sides = 36;
-  [[.30, .34, .06], [.27, .31, -.10], [.205, .24, -.16], [.15, .18, -.03]]
+  const positions = [], uv = [], colors = [], indices = [], sides = 36;
+  const gum = [[1, 1, 1], [.85, .69, .65], [.52, .26, .27], [.32, .12, .14]];
+  [[.33, .215, .06], [.315, .19, -.095], [.265, .135, -.145], [.23, .09, -.03]]
     .forEach(([rx, ry, z], j) => {
       for (let i = 0; i <= sides; i++) {
         const a = i / sides * Math.PI * 2, wrinkle = .008 * Math.sin(a * 9);
-        positions.push((rx + wrinkle) * Math.cos(a), (ry + wrinkle) * Math.sin(a), z);
+        const lower = Math.sin(a) < 0 ? .72 : 1;
+        positions.push((rx + wrinkle) * Math.cos(a), (ry + wrinkle) * Math.sin(a) * lower, z);
         uv.push(i / sides, j / 3);
+        colors.push(...gum[j]);
         if (j < 3 && i < sides) {
           const n = j * (sides + 1) + i, next = n + sides + 1;
           indices.push(n, next, n + 1, n + 1, next, next + 1);
         }
       }
     });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices); geometry.computeVertexNormals();
+  return geometry;
+}
+
+// Raised, eyeless cranial crest with a pointed nose and hollow cheek margins.
+function skullGeometry() {
+  const profiles = [
+    [-1.33, .25, 1.65, .15], [-1.53, .31, 1.69, .22],
+    [-1.72, .28, 1.76, .22], [-1.87, .21, 1.83, .20],
+    [-2.04, .10, 1.96, .13], [-2.13, .015, 2.06, .025],
+  ];
+  const positions = [], uv = [], indices = [], rows = 35, sides = 20;
+  for (let j = 0; j <= rows; j++) {
+    const f = j / rows * (profiles.length - 1);
+    const k = Math.min(profiles.length - 2, Math.floor(f)), t = f - k;
+    const [z, width, y, height] = profiles[k]
+      .map((value, i) => THREE.MathUtils.lerp(value, profiles[k + 1][i], t));
+    for (let i = 0; i <= sides; i++) {
+      const a = i / sides * Math.PI;
+      const vein = .007 * Math.sin(j * .8 + a * 6);
+      positions.push(Math.cos(a) * (width + vein),
+        y + Math.sin(a) * (height + vein) + .018 * Math.cos(a * 2), z);
+      uv.push(i / sides, j / rows * 1.7);
+      if (j < rows && i < sides) {
+        const n = j * (sides + 1) + i, next = n + sides + 1;
+        indices.push(n, n + 1, next, n + 1, next + 1, next);
+      }
+    }
+  }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -140,30 +176,71 @@ export function createCreature(scene) {
     bumpMap: maps.bumpMap, bumpScale: .03, roughness: .47, side: THREE.DoubleSide });
   const wet = new THREE.MeshPhysicalMaterial({ color: 0x1d090a, roughness: .15,
     clearcoat: 1, side: THREE.DoubleSide });
-  const tooth = new THREE.MeshStandardMaterial({ color: 0xc8b4a3, roughness: .39 });
+  const lipSkin = skin.clone(); lipSkin.vertexColors = true;
+  const tooth = new THREE.MeshStandardMaterial({ color: 0xa59687, roughness: .47 });
+  const tongueFlesh = new THREE.MeshPhysicalMaterial({ color: 0x7b272d, roughness: .27,
+    clearcoat: .83, clearcoatRoughness: .18, side: THREE.DoubleSide });
   const body = new THREE.Mesh(torsoGeometry(), skin); body.castShadow = true; group.add(body);
+  const skull = new THREE.Mesh(skullGeometry(), skin); skull.castShadow = true; group.add(skull);
+  // Uneven rib crests, stretched tendons and wounds cut into the back and chest.
+  for (let i = 0; i < 7; i++) for (const side of [-1, 1]) {
+    const z = -.72 + i * .265, width = i < 4 ? .48 : .41;
+    makeTube(group, i % 3 === 0 ? bruised : skin,
+      [V(side * (width - .065), 1.49, z - .09),
+        V(side * (width + .018), 1.67, z),
+        V(side * .20, 1.79, z + .045), V(0, 1.80, z + .04)],
+      [.028, .039, .029, .006], 15, 7);
+  }
+  for (const side of [-1, 1]) {
+    makeTube(group, bruised, [V(side * .23, 1.63, -.85), V(side * .29, 1.34, -.63),
+      V(side * .17, 1.18, -.28), V(side * .07, 1.12, .09)],
+    [.016, .03, .025, .006], 25, 7);
+    makeTube(group, skin, [V(side * .25, 1.69, -1.48),
+      V(side * .29, 1.58, -1.71), V(side * .31, 1.37, -1.86),
+      V(side * .19, 1.25, -1.93)], [.075, .1, .08, .025], 27, 10);
+    makeTube(group, bruised, [V(side * .06, 1.98, -2.055),
+      V(side * .07, 1.86, -2.08), V(side * .10, 1.82, -2.01)],
+    [.004, .019, .003], 12, 7);
+  }
 
   const maw = new THREE.Group(); maw.position.set(0, 1.5, -1.77); group.add(maw);
-  const cavity = new THREE.Mesh(new THREE.CircleGeometry(.19, 32), wet);
-  cavity.scale.y = 1.18; cavity.position.z = .015; maw.add(cavity);
-  maw.add(new THREE.Mesh(mouthGeometry(), skin));
-  makeTube(maw, bruised, [V(-.2, -.23, -.12), V(0, -.29, -.15), V(.2, -.23, -.12)],
+  const cavity = new THREE.Mesh(new THREE.CircleGeometry(.235, 32), wet);
+  cavity.scale.y = .55; cavity.position.z = .015; maw.add(cavity);
+  maw.add(new THREE.Mesh(mouthGeometry(), lipSkin));
+  const lowerJaw = new THREE.Group(); maw.add(lowerJaw);
+  makeTube(lowerJaw, skin, [V(-.26, -.12, -.04), V(-.14, -.22, -.13),
+    V(0, -.27, -.17), V(.14, -.22, -.13), V(.26, -.12, -.04)],
+    [.065, .10, .12, .10, .065], 25, 11);
+  makeTube(lowerJaw, bruised, [V(-.24, -.13, -.12), V(0, -.19, -.15), V(.24, -.13, -.12)],
     [.05, .07, .05], 16, 9);
-  makeTube(maw, bruised, [V(0, -.13, .005), V(0, -.13, -.16), V(0, -.2, -.31)],
-    [.08, .06, .006], 13, 8);
-  for (let i = 0; i < 18; i++) {
-    const a = i / 18 * Math.PI * 2;
-    const fang = new THREE.Mesh(new THREE.ConeGeometry(.021 + i % 3 * .004,
-      .10 + i % 4 * .02, 7), tooth);
-    fang.position.set(Math.cos(a) * .205, Math.sin(a) * .24, -.16);
-    fang.quaternion.setFromUnitVectors(V(0, 1, 0),
-      V(-Math.cos(a) * .5, -Math.sin(a) * .6, -.8).normalize());
-    maw.add(fang);
+  makeTube(maw, wet, [V(0, 0, .10), V(0, 0, .25), V(0, -.02, .39)],
+    [.18, .115, .035], 17, 10);
+  const tongue = makeTube(maw, tongueFlesh,
+    [V(0, -.025, .01), V(0, -.08, -.18), V(0, -.22, -.34),
+      V(0, -.43, -.36)], [.085, .075, .052, .004], 22, 10);
+  const saliva = new THREE.Group(); maw.add(saliva);
+  makeTube(saliva, new THREE.MeshPhysicalMaterial({ color: 0x8d514b, roughness: .08,
+    transparent: true, opacity: .62, clearcoat: 1 }),
+  [V(.075, -.11, -.13), V(.067, -.24, -.23), V(.045, -.43, -.25)],
+  [.006, .004, .001], 11, 5);
+  for (let i = 0; i < 9; i++) {
+    const x = (i - 4) * .062;
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(.023 + i % 3 * .004,
+      .105 + i % 4 * .019, 7), tooth);
+    fang.position.set(x, .095 + (1 - Math.abs(x) / .3) * .034, -.17);
+    fang.rotation.z = Math.PI + x * .5; maw.add(fang);
   }
-  // Eyeless brow, tendons and an extended upper face from the supplied reference.
+  for (let i = 0; i < 6; i++) {
+    const x = (i - 2.5) * .084;
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(.018 + i % 2 * .003,
+      .07 + i % 3 * .012, 7), tooth);
+    fang.position.set(x, -.128, -.14);
+    fang.rotation.z = x * .35; lowerJaw.add(fang);
+  }
+  // The raised central bridge of the skull follows the pointed reference silhouette.
   makeTube(group, skin, [V(-.27, 1.73, -1.52), V(-.13, 1.85, -1.73),
-    V(0, 1.81, -1.88), V(.13, 1.85, -1.73), V(.27, 1.73, -1.52)],
-  [.08, .11, .12, .11, .08], 28, 10);
+    V(0, 2.08, -2.09), V(.13, 1.85, -1.73), V(.27, 1.73, -1.52)],
+  [.06, .065, .055, .065, .06], 28, 10);
   for (const side of [-1, 1])
     makeTube(group, bruised, [V(side * .25, 1.44, -1.53),
       V(side * .31, 1.23, -1.7), V(side * .36, 1.08, -1.8)],
@@ -171,25 +248,51 @@ export function createCreature(scene) {
 
   const limbs = [];
   for (const side of [-1, 1]) for (let i = 0; i < 4; i++) {
-    const z = [-.66, -.2, .35, .86][i];
+    const z = [-.73, -.27, .34, .83][i];
+    const kneeZ = [-.94, -.51, .91, 1.27][i];
+    const kneeY = [1.74, 2.05, 2.05, 1.94][i];
+    const outerX = [1.43, 1.47, 1.17, .96][i];
+    const footZ = [-1.87, -1.29, .98, 1.64][i];
+    const knee = V(side * (i < 2 ? 1.02 : .93), kneeY, kneeZ);
+    const tip = V(side * outerX, .065, footZ);
     const shape = makeTube(group, skin,
-      [V(side * .4, 1.43, z), V(side * .68, 1.65, z),
-        V(side * 1.02, 1.97, z), V(side * 1.18, .8, z), V(side * 1.32, .08, z)],
-      [.15, .125, .09, .057, .043], 25, 11);
+      [V(side * .4, 1.43, z), V(side * .65, 1.57, z),
+        knee, V(side * (outerX - .08), 1.2, (kneeZ + footZ) / 2),
+        V(side * outerX, .37, footZ + .13), tip],
+      [.15, .13, .099, .073, .05, .04], 33, 12);
     const hand = new THREE.Group(); group.add(hand);
-    for (let f = -1; f <= 1; f++)
+    makeTube(hand, skin, [V(0, .025, .08), V(0, .025, -.06), V(0, .018, -.17)],
+      [.06, .085, .027], 17, 9);
+    for (let f = -2; f <= 2; f++) {
+      const spread = f * .052, length = .18 + (2 - Math.abs(f)) * .058;
       makeTube(hand, f === 0 ? skin : bruised,
-        [V(f * .035, .02, .04), V(f * .068, -.025, -.07), V(f * .09, -.035, -.17)],
-        [.032, .022, .002], 12, 7);
-    limbs.push({ side, i, z, shape, hand });
+        [V(spread * .62, .012, -.12), V(spread * 1.3, -.012, -.2),
+          V(spread * 1.5, -.018, -.20 - length * .52),
+          V(spread * 1.65, -.023, -.20 - length)],
+        [.031, .026, .014, .001], 16, 7);
+      const nail = new THREE.Mesh(new THREE.ConeGeometry(.015, .075, 6), tooth);
+      nail.position.set(spread * 1.65, -.015, -.20 - length);
+      nail.rotation.x = -Math.PI / 2; hand.add(nail);
+    }
+    const scar = new THREE.Mesh(new THREE.PlaneGeometry(.12, .19),
+      new THREE.MeshStandardMaterial({ color: 0x773f3a, roughness: .83,
+        transparent: true, opacity: .85, side: THREE.DoubleSide }));
+    scar.rotation.y = side * .4; group.add(scar);
+    limbs.push({ side, i, z, kneeZ, kneeY, outerX, footZ, shape, hand, scar });
   }
 
   const rearEye = new THREE.Group(); rearEye.position.set(0, 1.5, 1.38); group.add(rearEye);
-  const eye = new THREE.Mesh(new THREE.CircleGeometry(.13, 24), wet);
+  const eye = new THREE.Mesh(new THREE.CircleGeometry(.13, 24),
+    new THREE.MeshPhysicalMaterial({ color: 0x260d0e, roughness: .16,
+      emissive: 0x290709, emissiveIntensity: .6, clearcoat: 1, side: THREE.DoubleSide }));
   eye.scale.y = .72; eye.position.z = .045; rearEye.add(eye);
   const iris = new THREE.Mesh(new THREE.CircleGeometry(.05, 20),
-    new THREE.MeshPhysicalMaterial({ color: 0xc6b5a2, roughness: .21, clearcoat: 1 }));
+    new THREE.MeshPhysicalMaterial({ color: 0xbda693, roughness: .21,
+      emissive: 0x754326, emissiveIntensity: .52, clearcoat: 1 }));
   iris.position.z = .055; rearEye.add(iris);
+  const glint = new THREE.Mesh(new THREE.CircleGeometry(.011, 12),
+    new THREE.MeshBasicMaterial({ color: 0xe7c9a9, toneMapped: false }));
+  glint.position.set(-.018, .02, .058); rearEye.add(glint);
   for (const sign of [-1, 1])
     makeTube(rearEye, skin, [V(-.17, 0, .025), V(-.09, sign * .09, .075),
       V(0, sign * .12, .09), V(.09, sign * .09, .075), V(.17, 0, .025)],
@@ -204,21 +307,35 @@ export function createCreature(scene) {
       V(i * .14, -.28, -.14)], [.03, .022, .002], 12, 7);
 
   function update(time, motion = 1, eyeOpen = 0, attack = 0) {
-    const step = time * (motion > 1 ? 5.1 : 2.7);
+    const step = time * (motion > 1 ? 6.1 : 2.8);
+    const breath = Math.sin(time * 1.9);
+    body.scale.set(1 + breath * .022, 1 + breath * .012, 1 + breath * .008);
+    skull.position.y = breath * .009;
     for (const limb of limbs) {
-      const { side, i, z } = limb;
+      const { side, i, z, kneeZ, kneeY, outerX, footZ } = limb;
       const phase = step + (i % 2 ? Math.PI : 0) + (side < 0 ? Math.PI : 0);
-      const swing = Math.sin(phase) * .22 * Math.min(motion, 1.5);
-      const lift = Math.max(0, Math.cos(phase)) * .14 * Math.min(motion, 1.5);
-      const tip = V(side * (1.3 + i * .02), .075 + lift, z + (i - 1.5) * .13 + swing);
-      limb.shape.deform([V(side * .4, 1.43, z), V(side * .68, 1.65, z + swing * .1),
-        V(side * (1.0 + i * .025), i < 2 ? 2.03 : 1.86, z + swing * .3),
-        V(side * 1.17, .8 + lift * .3, tip.z - swing * .15), tip]);
-      limb.hand.position.copy(tip); limb.hand.rotation.y = Math.sin(phase) * .16;
+      const swing = Math.sin(phase) * .23 * Math.min(motion, 1.7);
+      const lift = Math.max(0, Math.cos(phase)) * .17 * Math.min(motion, 1.7);
+      const tip = V(side * outerX, .065 + lift, footZ + swing);
+      const knee = V(side * (i < 2 ? 1.02 : .93), kneeY + lift * .18,
+        kneeZ + swing * .32);
+      limb.shape.deform([V(side * .4, 1.43, z), V(side * .65, 1.57 + breath * .025, z + swing * .08),
+        knee, V(side * (outerX - .08), 1.2 + lift * .3, (knee.z + tip.z) / 2),
+        V(side * outerX, .37 + lift * .55, tip.z + .13), tip]);
+      limb.hand.position.copy(tip);
+      limb.hand.rotation.set(0, Math.sin(phase) * .15 + side * .12, Math.sin(phase + i) * .07);
+      limb.scar.position.copy(knee).add(V(side * .025, .015, -.093));
     }
-    maw.scale.y = .86 + attack * 1.9 + Math.sin(time * 1.7) * .025;
-    rearEye.scale.y = Math.max(.035, eyeOpen);
-    iris.position.x = Math.sin(time * 1.1) * .015;
+    maw.position.y = 1.5 + breath * .015;
+    maw.scale.y = .86 + attack * .75 + Math.sin(time * 1.7) * .025;
+    lowerJaw.position.y = -attack * .30;
+    lowerJaw.rotation.x = -attack * .17;
+    tongue.mesh.rotation.z = Math.sin(time * 2.3) * (.04 + attack * .13);
+    saliva.rotation.z = Math.sin(time * 1.5) * .13;
+    const blink = (time % 6.9 > 6.76) ? .2 : 1;
+    rearEye.scale.y = Math.max(.035, eyeOpen * blink);
+    iris.position.x = Math.sin(time * 1.1) * .027;
+    iris.position.y = Math.sin(time * .8) * .012;
   }
 
   function setLimb(position, progress) {
