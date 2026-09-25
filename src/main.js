@@ -14,6 +14,12 @@ const reticle = document.querySelector('#reticle');
 const veil = document.querySelector('#veil');
 const status = document.querySelector('#status');
 const attempt = document.querySelector('#attempt');
+if (!canvas.getContext('webgl2')) {
+  description.textContent = 'Ta przeglądarka nie udostępnia WebGL 2. Włącz akcelerację sprzętową i otwórz grę ponownie.';
+  startButton.disabled = true;
+  startButton.textContent = 'WEBGL 2 NIEDOSTĘPNY';
+  throw new Error('SZYB 09 requires WebGL 2');
+}
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -268,6 +274,7 @@ function updateMonster(dt) {
   const m = creature.group;
   const playerCell = currentCell();
   const mCell = cellAt(maze, m.position.x, m.position.z, monster.cell.level) || monster.cell;
+  if (!monster.verticalTravel && mCell.id !== monster.cell.id) monster.cell = mCell;
   const distance = m.position.distanceTo(new THREE.Vector3(player.x, floorY(player.level) + 1, player.z));
   const sameLevel = monster.cell.level === player.level;
   const clear = sameLevel && distance < 20 && lineClear(m.position.x, m.position.z, player.x, player.z, player.level);
@@ -370,13 +377,19 @@ function updateDeath(dt) {
   deathTime += dt;
   const k = Math.min(1, deathTime / 3.6);
   const forward = new THREE.Vector3(); camera.getWorldDirection(forward);
-  const destination = camera.position.clone().addScaledVector(forward, 1.17 - k * .48);
-  destination.y -= .35 + k * .28;
+  const destination = camera.position.clone().addScaledVector(forward, 1.35 - k * 1.05);
+  // The mouth begins at the player's legs, then advances over the camera.
+  destination.y -= 1.5 - k * 1.25;
   creature.group.position.lerp(destination, Math.min(1, dt * (2 + deathTime * 1.6)));
   creature.group.rotation.y = Math.atan2(camera.position.x - creature.group.position.x,
     camera.position.z - creature.group.position.z) + Math.PI;
   creature.update(time, 1.2, 1, k);
+  camera.rotation.x = THREE.MathUtils.lerp(player.pitch, deathTime < 2.5 ? -.72 : -.12, Math.min(1, deathTime * .75));
   camera.rotation.z = Math.sin(deathTime * 12) * (.01 + k * .055);
+  legs.forEach((leg, i) => {
+    leg.position.z = -.12 - k * .24;
+    leg.rotation.x = Math.sin(deathTime * 15 + i * Math.PI) * (.18 + k * .3);
+  });
   veil.style.opacity = String(Math.max(0, (deathTime - 2.2) / 2.4));
   if (!deathSoundPlayed && deathTime > 1.45) {
     audio.play('jump-hit', null, { gain: .9, duration: 2.3 });
