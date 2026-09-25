@@ -3,6 +3,7 @@ import { createMaze, center, cellAt, route, DIRS, CELL, LEVEL_HEIGHT } from './m
 import { createWorld } from './world.js';
 import { createCreature } from './creature.js';
 import { GameAudio } from './audio.js';
+import { handleGameKey } from './input.js';
 
 const canvas = document.querySelector('#game');
 const overlay = document.querySelector('#overlay');
@@ -213,7 +214,7 @@ function updateClimb(dt) {
 }
 
 function updatePlayer(dt) {
-  player.crouch = keys.has('ControlLeft') || keys.has('ControlRight');
+  player.crouch = keys.has('KeyC') || !validPosition(player.x, player.z, player.level, false);
   player.eyeHeight = THREE.MathUtils.damp(player.eyeHeight, player.crouch ? .82 : 1.39, 12, dt);
   if (updateClimb(dt)) return;
   let forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
@@ -442,6 +443,7 @@ document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === canvas && mode === 'playing') {
     hideOverlay(); status.textContent = '';
   } else if (mode === 'playing') {
+    keys.clear();
     mode = 'paused'; showOverlay('WSTRZYMANO', '', 'WRÓĆ');
   }
 });
@@ -452,21 +454,23 @@ document.addEventListener('mousemove', e => {
   camera.rotation.set(player.pitch, player.yaw, 0);
 });
 document.addEventListener('keydown', e => {
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ControlLeft', 'ControlRight'].includes(e.code)) e.preventDefault();
-  keys.add(e.code);
-  if (e.repeat || mode !== 'playing' || document.pointerLockElement !== canvas) return;
+  const active = mode === 'playing' && document.pointerLockElement === canvas;
+  if (!handleGameKey(e, active, keys, true) || e.repeat) return;
   if (e.code === 'KeyF') {
     player.light = !player.light;
     audio.play('metal-squeak', camera.position, { gain: .06, duration: .08, offset: 1.8 });
   }
   if (e.code === 'KeyE') beginClimb();
-  if (e.code === 'Space' && player.onGround && !player.crouch && !player.climb) {
+  if (e.code === 'Space' && player.onGround && !player.crouch && !keys.has('KeyC') && !player.climb) {
     player.vy = 3.8; player.onGround = false;
     audio.play('steps-metal', camera.position, { gain: .31, duration: .27, offset: 1.5 });
     noise(camera.position.clone(), 11);
   }
 });
-document.addEventListener('keyup', e => keys.delete(e.code));
+document.addEventListener('keyup', e => {
+  handleGameKey(e, mode === 'playing' && document.pointerLockElement === canvas, keys, false);
+  keys.delete(e.code);
+});
 document.addEventListener('mousedown', e => {
   if (mode === 'playing' && document.pointerLockElement === canvas && e.button === 0) tryBreak();
 });

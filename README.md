@@ -18,7 +18,7 @@ Projekt jest statyczny. W katalogu repozytorium uruchom `python3 -m http.server 
 |---|---|
 | WASD + mysz | Ruch i rozglądanie |
 | Shift | Powolny, cichy krok |
-| Ctrl | Kucanie pod niskimi przeszkodami |
+| C | Kucanie pod niskimi przeszkodami |
 | Spacja | Skok; lądowanie słychać z daleka |
 | F | Latarka |
 | E | Wejście na drabinę i zejście z niej; W podczas wspinania |
