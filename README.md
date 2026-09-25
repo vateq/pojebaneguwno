@@ -2,6 +2,12 @@
 
 Przeglądarkowy survival horror 3D w proceduralnym labiryncie wentylacyjnym. Każda próba generuje nowy układ dwóch poziomów, ślepych odnóg, paneli do rozbicia, niskich przejść i drabin. Wyjście znajduje się na górnym poziomie. Potwór patroluje kanały, słyszy kroki, skoki i niszczony metal, reaguje na światło latarki i potrafi dotrzeć drabinami na drugi poziom. Ma również oko z tyłu głowy, które otwiera się, gdy gracz pozostaje za nim.
 
+## Gra online
+
+[Otwórz grę w przeglądarce](https://raw.githack.com/vateq/pojebaneguwno/main/index.html). Podgląd przez rawgit.hack wyświetla jednorazowy ekran potwierdzenia z adresem pliku. Przeglądarka musi obsługiwać WebGL 2.
+
+Workflow `.github/workflows/pages.yml` publikuje tę samą grę na GitHub Pages, gdy Actions mogą uruchamiać zadania w repozytorium i Pages jest włączone w ustawieniach.
+
 ## Uruchomienie
 
 Projekt jest statyczny. W katalogu repozytorium uruchom `python3 -m http.server 8080` i otwórz `http://localhost:8080/`. Przeglądarka musi obsługiwać WebGL 2, Web Audio i Pointer Lock. Gra wymaga klawiatury i myszy. Nie otwieraj `index.html` protokołem `file://`, ponieważ moduły i dźwięki są pobierane przez HTTP.
