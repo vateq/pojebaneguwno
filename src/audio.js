@@ -38,18 +38,24 @@ export class GameAudio {
 
   play(name, position = null, options = {}) {
     if (!this.context || !this.buffers.has(name)) return null;
-    const { gain = 1, rate = 1, offset = 0, duration, loop = false, ref = 2.2 } = options;
+    const { gain = 1, rate = 1, offset = 0, duration, loop = false, ref = 2.2, lowpass } = options;
     const source = this.context.createBufferSource();
     source.buffer = this.buffers.get(name); source.playbackRate.value = rate; source.loop = loop;
     const volume = this.context.createGain(); volume.gain.value = gain;
     let panner = null;
+    let output = volume;
+    if (lowpass) {
+      const filter = this.context.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.value = lowpass;
+      volume.connect(filter); output = filter;
+    }
     if (position) {
       panner = this.context.createPanner(); panner.panningModel = 'HRTF';
       panner.distanceModel = 'inverse'; panner.refDistance = ref;
       panner.maxDistance = 55; panner.rolloffFactor = .95;
       panner.positionX.value = position.x; panner.positionY.value = position.y; panner.positionZ.value = position.z;
-      source.connect(volume); volume.connect(panner); panner.connect(this.master);
-    } else { source.connect(volume); volume.connect(this.master); }
+      source.connect(volume); output.connect(panner); panner.connect(this.master);
+    } else { source.connect(volume); output.connect(this.master); }
     const start = Math.max(0, Math.min(offset, source.buffer.duration - .05));
     if (loop) source.start(0, start);
     else if (duration) source.start(0, start, Math.min(duration, source.buffer.duration - start));

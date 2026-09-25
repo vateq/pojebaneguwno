@@ -1,9 +1,10 @@
 import * as THREE from '../vendor/three.bundle.js';
-import { createMaze, center, cellAt, route, DIRS, CELL, LEVEL_HEIGHT } from './maze.js';
+import { createMaze, center, cellAt, creatureRoute, DIRS, CELL, LEVEL_HEIGHT } from './maze.js';
 import { createWorld } from './world.js';
 import { createCreature } from './creature.js';
 import { GameAudio } from './audio.js';
 import { handleGameKey } from './input.js';
+import { canSeePlayer, updateAttackCharge } from './ai.js';
 
 const canvas = document.querySelector('#game');
 const overlay = document.querySelector('#overlay');
@@ -24,6 +25,8 @@ if (!canvas.getContext('webgl2')) {
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
@@ -32,6 +35,11 @@ const camera = new THREE.PerspectiveCamera(78, innerWidth / innerHeight, .035, 7
 camera.rotation.order = 'YXZ'; scene.add(camera);
 const flashlight = new THREE.SpotLight(0xd7eee4, 22, 20, .42, .62, 1.5);
 flashlight.position.set(.13, -.16, .08);
+flashlight.castShadow = true;
+flashlight.shadow.mapSize.set(512, 512);
+flashlight.shadow.camera.near = .15;
+flashlight.shadow.camera.far = 19;
+flashlight.shadow.bias = -.00022;
 const flashlightTarget = new THREE.Object3D(); flashlightTarget.position.set(0, -.02, -1);
 camera.add(flashlight, flashlightTarget); flashlight.target = flashlightTarget;
 const lightCore = new THREE.PointLight(0xb9d7cd, .13, 2.5); camera.add(lightCore);
@@ -70,8 +78,9 @@ camera.add(torch);
 
 const monster = {
   cell: maze.mainLadder, target: null, investigation: null, alertUntil: 0,
-  route: [], recalc: 0, soundClock: 0, breathClock: 0, eyeTimer: 0, eye: 0,
-  activity: .55, verticalTravel: null, voice: null,
+  route: [], nextCell: null, recalc: 0, soundClock: 0, breathClock: 0, eyeTimer: 0, eye: 0,
+  verticalTravel: null, voice: null, sightMeter: 0, chaseUntil: 0,
+  attackCharge: 0, warned: false,
 };
 const monsterStart = center(monster.cell);
 creature.group.position.set(monsterStart.x, monsterStart.y, monsterStart.z);
@@ -185,7 +194,8 @@ function updateClimb(dt) {
     climb.danger += dt;
     const anchor = center(climb.cell);
     creature.setLimb(new THREE.Vector3(anchor.x + .2, floorY(1) + 1.9, anchor.z - .25), Math.min(.79, .18 + climb.danger * .4));
-    if (climb.danger < .09) audio.play('jump-rise', new THREE.Vector3(anchor.x, floorY(1), anchor.z), { gain: .42, duration: 2.8 });
+    if (climb.danger < .09) audio.play('jump-rise', new THREE.Vector3(anchor.x, floorY(1), anchor.z),
+      { gain: .24, duration: 2.8, lowpass: 1450 });
     if (keys.has('ShiftLeft') || keys.has('ShiftRight')) climb.quiet += dt;
     else climb.quiet = Math.max(0, climb.quiet - dt * 1.7);
     if (player.light) climb.quiet = Math.max(0, climb.quiet - dt * 2.2);
@@ -264,34 +274,49 @@ function updatePlayer(dt) {
 
 function choosePatrolCell() {
   const from = monster.cell;
-  const options = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 28; i++) {
     const c = maze.cells[Math.floor(Math.random() * maze.cells.length)];
-    if (c.level === from.level && c.id !== from.id) options.push(c);
+    if (c.level !== from.level || c.id === from.id) continue;
+    const path = creatureRoute(maze, from, c);
+    if (path.length > 3 && path.at(-1).id === c.id) return c;
   }
-  return options[Math.floor(Math.random() * options.length)] || maze.spawn;
+  return from;
 }
 function updateMonster(dt) {
   const m = creature.group;
   const playerCell = currentCell();
-  const mCell = cellAt(maze, m.position.x, m.position.z, monster.cell.level) || monster.cell;
-  if (!monster.verticalTravel && mCell.id !== monster.cell.id) monster.cell = mCell;
-  const distance = m.position.distanceTo(new THREE.Vector3(player.x, floorY(player.level) + 1, player.z));
+  const mCell = monster.cell;
   const sameLevel = monster.cell.level === player.level;
-  const clear = sameLevel && distance < 20 && lineClear(m.position.x, m.position.z, player.x, player.z, player.level);
+  const horizontal = Math.hypot(player.x - m.position.x, player.z - m.position.z);
+  const distance = sameLevel ? horizontal : Math.hypot(horizontal, LEVEL_HEIGHT);
+  const clear = sameLevel && horizontal < 20 && lineClear(m.position.x, m.position.z, player.x, player.z, player.level);
   const toPlayer = new THREE.Vector3(player.x - m.position.x, 0, player.z - m.position.z).normalize();
   const facing = new THREE.Vector3(-Math.sin(m.rotation.y), 0, -Math.cos(m.rotation.y));
   const dot = facing.dot(toPlayer);
-  const visible = clear && dot > .24 && (distance < (player.light ? 17 : 5.4));
-  if (clear && dot < -.42 && distance < 4.2) monster.eyeTimer += dt;
-  else monster.eyeTimer = Math.max(0, monster.eyeTimer - dt * 1.3);
-  monster.eye = THREE.MathUtils.clamp((monster.eyeTimer - 1.6) / .85, 0, 1);
-  const rearSeen = clear && dot < -.42 && monster.eye > .96;
-  if (visible || rearSeen) {
-    monster.investigation = playerCell; monster.alertUntil = time + 10; monster.recalc = 0;
-    if ((visible && distance < 10) || rearSeen || distance < 1.15) { kill('seen'); return; }
+  const quiet = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  const moving = keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD');
+  const visible = canSeePlayer({ distance, dot, clear, light: player.light,
+    quiet, crouch: player.crouch, moving });
+  if (clear && dot < -.48 && distance < 3.35) monster.eyeTimer += dt;
+  else monster.eyeTimer = Math.max(0, monster.eyeTimer - dt * 1.1);
+  monster.eye = THREE.MathUtils.clamp((monster.eyeTimer - 2.5) / 1.1, 0, 1);
+  const rearSeen = clear && dot < -.48 && monster.eye > .98;
+  monster.sightMeter = THREE.MathUtils.clamp(monster.sightMeter +
+    (visible || rearSeen ? dt * (player.light ? 1.15 : .72) : -dt * 1.35), 0, 1);
+  if (monster.sightMeter > .48 && !monster.warned) {
+    audio.play('breath-close', m.position, { gain: .36, rate: .72, duration: 1.5, offset: 1.3 });
+    monster.warned = true;
   }
-  if (sameLevel && distance < 1.05) { kill('contact'); return; }
+  if (monster.sightMeter < .12) monster.warned = false;
+  if (monster.sightMeter >= 1) {
+    if (monster.investigation?.id !== playerCell?.id) monster.recalc = 0;
+    monster.investigation = playerCell;
+    monster.alertUntil = time + 6.5;
+    monster.chaseUntil = time + 3.6;
+  }
+  // A close encounter gives a short chance to pull away or break line of sight.
+  monster.attackCharge = updateAttackCharge(monster.attackCharge, clear && distance < .87, dt);
+  if (monster.attackCharge >= 1) { kill('contact'); return; }
 
   if (time > monster.alertUntil) monster.investigation = null;
   if (!monster.target || (monster.investigation && monster.target.id !== monster.investigation.id) ||
@@ -300,69 +325,81 @@ function updateMonster(dt) {
   }
   monster.recalc -= dt;
   if (monster.recalc <= 0 || monster.route.length < 2) {
-    monster.route = route(maze, mCell, monster.target, true);
-    monster.recalc = monster.investigation ? .5 : 2.8;
+    monster.route = creatureRoute(maze, mCell, monster.target);
+    monster.recalc = monster.investigation ? .38 : 2.3;
   }
-  if (monster.route.length < 2) { monster.target = null; return; }
-  const next = monster.route[1];
-  if (next.level !== monster.cell.level) {
+  // Finish the current corridor before turning; a mid-cell route change could
+  // otherwise cut diagonally through a wall or a sealed panel.
+  const next = monster.nextCell || monster.route[1];
+  if (!next) monster.target = null;
+  if (next && next.level !== monster.cell.level) {
     const ladder = center(monster.cell);
     const near = Math.hypot(m.position.x - ladder.x, m.position.z - ladder.z);
     if (near < .24) {
+      monster.nextCell = next;
       monster.verticalTravel ??= 0;
       monster.verticalTravel += dt;
-      m.position.y = floorY(monster.cell.level) + (floorY(next.level) - floorY(monster.cell.level)) * Math.min(1, monster.verticalTravel / 1.7);
-      if (monster.verticalTravel >= 1.7) {
-        monster.cell = next; monster.verticalTravel = null; m.position.y = floorY(next.level);
+      m.position.y = floorY(monster.cell.level) + (floorY(next.level) - floorY(monster.cell.level)) * Math.min(1, monster.verticalTravel / 2.4);
+      if (monster.verticalTravel >= 2.4) {
+        monster.cell = next; monster.nextCell = null;
+        monster.verticalTravel = null; m.position.y = floorY(next.level);
         monster.recalc = 0;
       }
       creature.update(time, .2, monster.eye); return;
     }
   }
-  const target = next.level === monster.cell.level ? center(next) : center(monster.cell);
-  const dx = target.x - m.position.x, dz = target.z - m.position.z;
-  const length = Math.hypot(dx, dz);
-  const hunting = monster.investigation !== null;
-  const speed = hunting ? 3.38 : 1.14;
-  if (length > .08) {
-    const step = Math.min(length, speed * dt);
-    m.position.x += dx / length * step; m.position.z += dz / length * step;
-    const desired = Math.atan2(-dx, -dz);
-    m.rotation.y += Math.atan2(Math.sin(desired - m.rotation.y), Math.cos(desired - m.rotation.y)) * Math.min(1, dt * 8);
-  } else if (next.level === monster.cell.level) {
-    monster.cell = next; monster.recalc = 0;
+  const chasing = time < monster.chaseUntil;
+  const investigating = monster.investigation !== null;
+  const speed = chasing ? 2.17 : investigating ? 1.42 : .77;
+  let length = 0;
+  if (next) {
+    const edge = next.level === monster.cell.level ? barrierOn(monster.cell, next) : null;
+    if (edge && (edge.type === 'low' || !edge.broken && edge.type === 'panel')) {
+      monster.route = []; monster.recalc = 0;
+    } else {
+      const target = next.level === monster.cell.level ? center(next) : center(monster.cell);
+      const dx = target.x - m.position.x, dz = target.z - m.position.z;
+      length = Math.hypot(dx, dz);
+      if (length > .08) {
+        monster.nextCell = next;
+        const step = Math.min(length, speed * dt);
+        m.position.x += dx / length * step; m.position.z += dz / length * step;
+        const desired = Math.atan2(-dx, -dz);
+        m.rotation.y += Math.atan2(Math.sin(desired - m.rotation.y), Math.cos(desired - m.rotation.y)) * Math.min(1, dt * 3.7);
+      } else if (next.level === monster.cell.level) {
+        monster.cell = next; monster.nextCell = null; monster.recalc = 0;
+      }
+    }
   }
-  m.position.y = floorY(monster.cell.level) + Math.sin(time * (hunting ? 12 : 5)) * .035;
-  const edgeBarrier = next.level === monster.cell.level ? barrierOn(monster.cell, next) : null;
-  if (edgeBarrier?.type === 'panel' && !edgeBarrier.broken && length < 2.0) {
-    edgeBarrier.broken = true; edgeBarrier.group.visible = false;
-    audio.play('metal-impact', m.position, { gain: .8, duration: 1.15, offset: 1.6 });
-    monster.recalc = 0;
-  }
-  creature.update(time, hunting ? 1.8 : .65, monster.eye);
+  m.position.y = floorY(monster.cell.level) + Math.sin(time * (chasing ? 9 : 3.2)) * .025;
+  creature.update(time, length > .08 ? chasing ? 1.4 : .55 : .08, monster.eye, monster.attackCharge * .25);
   monster.soundClock -= dt;
   if (monster.soundClock <= 0 && length > .1) {
-    audio.play(hunting ? 'run-metal' : 'steps-heavy', m.position,
-      { gain: hunting ? .75 : .39, duration: hunting ? .37 : .45,
-        offset: Math.random() * (hunting ? 14 : 19), rate: hunting ? 1.2 : .78 });
-    monster.soundClock = hunting ? .31 : .8;
-    if (hunting && Math.random() < .23) audio.play('metal-groan', m.position, { gain: .3, duration: .46, offset: Math.random() * 4 });
+    audio.play(chasing ? 'run-metal' : 'steps-heavy', m.position,
+      { gain: chasing ? .48 : investigating ? .25 : .13, duration: chasing ? .34 : .31,
+        offset: Math.random() * (chasing ? 14 : 19), rate: chasing ? .92 : .66, lowpass: chasing ? 3000 : 1350 });
+    monster.soundClock = chasing ? .46 : investigating ? .68 : 1.15;
+    if (chasing && Math.random() < .14) audio.play('metal-groan', m.position, { gain: .18, duration: .38, offset: Math.random() * 4 });
   }
   monster.breathClock -= dt;
   if (monster.breathClock <= 0) {
-    audio.play(distance < 8 ? 'breath-close' : 'breath-low', m.position,
-      { gain: distance < 8 ? .75 : .52, duration: distance < 8 ? 4 : 3.5, offset: Math.random() * 2 });
-    monster.breathClock = distance < 8 ? 4.2 : 4.7;
+    audio.play(chasing ? 'breath-close' : 'breath-low', m.position,
+      { gain: chasing ? .33 : .11, duration: chasing ? 2.1 : 2.8,
+        rate: chasing ? .86 : .73, lowpass: chasing ? 2100 : 750, offset: Math.random() * 2 });
+    monster.breathClock = chasing ? 4.4 : 7 + Math.random() * 3;
   }
   monster.voice?.setPosition(m.position);
+  monster.voice?.setGain(chasing ? .17 : investigating ? .075 : .028);
 }
 
 function kill(reason) {
   if (mode !== 'playing') return;
   mode = 'dying'; deathTime = 0; deathSoundPlayed = false;
   document.exitPointerLock?.();
-  audio.play('jump-squeak', creature.group.position, { gain: .55, duration: 1.25 });
-  audio.play('jump-creature', creature.group.position, { gain: .75, duration: 2 });
+  audio.play('breath-close', creature.group.position,
+    { gain: .38, duration: 2.4, rate: .68, lowpass: 1600 });
+  audio.play('metal-groan', creature.group.position,
+    { gain: .15, duration: 1.4, rate: .7, lowpass: 1200 });
   if (reason === 'ladder') creature.setLimb(new THREE.Vector3(), 0);
   status.textContent = '';
 }
@@ -393,8 +430,8 @@ function updateDeath(dt) {
   });
   veil.style.opacity = String(Math.max(0, (deathTime - 2.2) / 2.4));
   if (!deathSoundPlayed && deathTime > 1.45) {
-    audio.play('jump-hit', null, { gain: .9, duration: 2.3 });
-    audio.play('jump-rise', null, { gain: .5, duration: 2, offset: 1.1 });
+    audio.play('jump-hit', null, { gain: .42, duration: 2.3, lowpass: 1800 });
+    audio.play('jump-rise', null, { gain: .21, duration: 2, offset: 1.1, lowpass: 1100 });
     deathSoundPlayed = true;
   }
   if (deathTime > 4.6) {
@@ -432,8 +469,10 @@ async function begin() {
   startButton.disabled = true; startButton.textContent = 'ŁADOWANIE DŹWIĘKU…';
   await audio.init();
   if (!fanLoops.length) {
-    fanLoops = world.fans.map(f => ({ sound: audio.play('fan', f.position, { gain: .19, loop: true, ref: 1.6 }), position: f.position }));
-    monster.voice = audio.play('breath-low', creature.group.position, { gain: .17, loop: true, ref: 2.4 });
+    fanLoops = world.fans.map(f => ({ sound: audio.play('fan', f.position,
+      { gain: .085, loop: true, ref: 1.3, lowpass: 900 }), position: f.position }));
+    monster.voice = audio.play('breath-low', creature.group.position,
+      { gain: .028, rate: .72, loop: true, ref: 1.7, lowpass: 720 });
   }
   mode = 'playing'; startButton.disabled = false;
   canvas.requestPointerLock();

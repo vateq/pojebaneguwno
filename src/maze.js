@@ -1,4 +1,4 @@
-export const SIZE = 12;
+export const SIZE = 14;
 export const CELL = 3.6;
 export const LEVEL_HEIGHT = 3.45;
 export const DIRS = [
@@ -45,11 +45,11 @@ export function createMaze(seed = Date.now()) {
       connect(current, choice.cell, choice.d);
       seen.add(choice.cell.id); stack.push(choice.cell);
     }
-    // A few loops create uncertain routes while keeping long dead ends.
+    // Sparse loops preserve dead ends but make the correct route less predictable.
     for (const c of cells.filter(c => c.level === level)) {
       for (const d of [1, 2]) {
         const n = neighbor(c, d);
-        if (n && !c.links[d] && rng() < 0.065) connect(c, n, d);
+        if (n && !c.links[d] && rng() < 0.045) connect(c, n, d);
       }
     }
   }
@@ -80,9 +80,11 @@ export function createMaze(seed = Date.now()) {
   const upperStart = by(mainLadder.x, mainLadder.z, 1);
   const upperDistances = flood(upperStart).distance;
   const boundary = cells.filter(c => c.level === 1 && (c.x === 0 || c.z === 0 || c.x === SIZE - 1 || c.z === SIZE - 1));
-  boundary.sort((a, b) => upperDistances.get(b.id) - upperDistances.get(a.id));
-  const exit = boundary[0];
-  const exitDir = exit.z === 0 ? 0 : exit.x === SIZE - 1 ? 1 : exit.z === SIZE - 1 ? 2 : 3;
+  const farthest = Math.max(...boundary.map(c => upperDistances.get(c.id)));
+  const distantExits = boundary.filter(c => upperDistances.get(c.id) >= Math.max(20, farthest * .7));
+  const exit = distantExits[Math.floor(rng() * distantExits.length)];
+  const outside = DIRS.map((_, d) => d).filter(d => !neighbor(exit, d));
+  const exitDir = outside[Math.floor(rng() * outside.length)];
 
   const ladders = [mainLadder];
   const choices = cells.filter(c => c.level === 0 && c.id !== spawn.id && c.id !== mainLadder.id
@@ -119,12 +121,12 @@ export function createMaze(seed = Date.now()) {
   const mandatory = [[spawn, lowerRoute[1]], [upperRoute[upperRoute.length - 2], exit]];
   for (const [a, b] of mandatory)
     barriers.set(key(a, b), { a: a.id, b: b.id, type: 'panel', hits: 0, required: 4, broken: false });
-  setOnPath(lowerRoute, 0.38, 'panel');
-  setOnPath(lowerRoute, 0.7, 'low');
-  setOnPath(upperRoute, 0.43, 'panel');
-  setOnPath(upperRoute, 0.72, 'low');
+  for (const fraction of [.24, .48, .77]) setOnPath(lowerRoute, fraction, 'panel');
+  setOnPath(lowerRoute, .63, 'low');
+  for (const fraction of [.28, .55, .81]) setOnPath(upperRoute, fraction, 'panel');
+  setOnPath(upperRoute, .68, 'low');
   for (const c of cells) {
-    if (rng() > 0.026 || ladderIds.has(c.id) || c.id === spawn.id || c.id === exit.id) continue;
+    if (rng() > 0.042 || ladderIds.has(c.id) || c.id === spawn.id || c.id === exit.id) continue;
     const options = [1, 2].map(d => neighbor(c, d)).filter(n => n && c.links[DIRS.findIndex(d => d.dx === n.x - c.x && d.dz === n.z - c.z)]);
     if (!options.length) continue;
     const n = options[Math.floor(rng() * options.length)], id = key(c, n);
@@ -141,27 +143,48 @@ export function cellAt(maze, x, z, level) {
   return maze.by(Math.round(x / CELL + (SIZE - 1) / 2), Math.round(z / CELL + (SIZE - 1) / 2), level);
 }
 
-export function adjacent(maze, cell, includeBarriers = false) {
+export function adjacent(maze, cell, includeBarriers = false, creature = false) {
   const result = [];
   for (let d = 0; d < 4; d++) if (cell.links[d]) {
     const next = maze.neighbor(cell, d), barrier = maze.barriers.get(maze.key(cell, next));
-    if (includeBarriers || !barrier || barrier.type === 'low' || barrier.broken) result.push(next);
+    if (includeBarriers || !barrier || (barrier.type === 'low' ? !creature : barrier.broken)) result.push(next);
   }
   if (maze.ladderIds.has(cell.id)) result.push(maze.by(cell.x, cell.z, 1 - cell.level));
   return result;
 }
 
-export function route(maze, start, goal, includeBarriers = false) {
+export function route(maze, start, goal, includeBarriers = false, creature = false) {
   if (!start || !goal) return [];
   const queue = [start], prev = new Map([[start.id, null]]);
   for (let i = 0; i < queue.length && !prev.has(goal.id); i++) {
     const c = queue[i];
-    for (const n of adjacent(maze, c, includeBarriers)) {
+    for (const n of adjacent(maze, c, includeBarriers, creature)) {
       if (!prev.has(n.id)) { prev.set(n.id, c.id); queue.push(n); }
     }
   }
   if (!prev.has(goal.id)) return [];
   const result = [goal];
+  while (result[0].id !== start.id) result.unshift(maze.cells[prev.get(result[0].id)]);
+  return result;
+}
+
+// A closed vent and a crawl-only gap are both solid for the creature. If a sound
+// comes from beyond one, it approaches the closest reachable cell and waits.
+export function creatureRoute(maze, start, goal) {
+  if (!start || !goal) return [];
+  const queue = [start], prev = new Map([[start.id, null]]);
+  let closest = start;
+  const score = c => Math.abs(c.x - goal.x) + Math.abs(c.z - goal.z) +
+    (c.level === goal.level ? 0 : SIZE * 2);
+  for (let i = 0; i < queue.length; i++) {
+    const c = queue[i];
+    if (score(c) < score(closest)) closest = c;
+    for (const n of adjacent(maze, c, false, true)) {
+      if (!prev.has(n.id)) { prev.set(n.id, c.id); queue.push(n); }
+    }
+  }
+  const destination = prev.has(goal.id) ? goal : closest;
+  const result = [destination];
   while (result[0].id !== start.id) result.unshift(maze.cells[prev.get(result[0].id)]);
   return result;
 }
