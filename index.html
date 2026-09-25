@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080d0c">
+  <meta name="description" content="SZYB 09 — survival horror 3D w proceduralnym labiryncie wentylacyjnym.">
+  <title>SZYB 09 — Labirynt wentylacyjny</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Gra 3D SZYB 09"></canvas>
+  <div id="grain" aria-hidden="true"></div>
+  <div id="vignette" aria-hidden="true"></div>
+  <div id="veil" aria-hidden="true"></div>
+  <div id="reticle" hidden aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <div id="status" aria-live="polite"></div>
+  <div id="overlay">
+    <div class="edge-label">OBIEKT / 09 <span>·</span> AWARIA WENTYLACJI</div>
+    <main class="panel">
+      <div class="eyebrow"><span class="signal"></span> POŁĄCZENIE UTRACONE <span class="number">PRÓBA <b id="attempt">01</b></span></div>
+      <h1 id="title">SZYB <em>09</em></h1>
+      <p id="description">W środku coś oddycha. Znajdź wyjście.</p>
+      <button id="start" type="button">WEJDŹ DO SZYBU <span aria-hidden="true">↗</span></button>
+      <div id="controls" class="controls">
+        <div><kbd>W A S D</kbd><span>RUCH</span></div>
+        <div><kbd>SHIFT</kbd><span>CICHO</span></div>
+        <div><kbd>CTRL</kbd><span>KUCANIE</span></div>
+        <div><kbd>SPACJA</kbd><span>SKOK</span></div>
+        <div><kbd>F</kbd><span>LATARKA</span></div>
+        <div><kbd>E</kbd><span>DRABINA</span></div>
+        <div><kbd>MYSZ</kbd><span>ROZBIJ PANEL</span></div>
+      </div>
+    </main>
+    <div class="footnote">SŁUCHAWKI ZALECANE <span>✳</span> DŹWIĘK PRZESTRZENNY</div>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
